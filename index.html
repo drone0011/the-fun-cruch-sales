@@ -21,15 +21,31 @@ const PRODUCTS = [
 const SB_TO_AED = 5;
 const LOCAL_KEY = 'funcrunch_sales_v2';
 
-function formatAED(n){ return 'AED ' + (Math.round(n*100)/100).toFixed(2); }
+function formatAED(n){
+  const num = Number(n) || 0;
+  return 'AED ' + (Math.round(num*100)/100).toFixed(2);
+}
 
+// CSV helper: serialize cart as JSON so CSV stays valid
 function downloadCSV(rows, filename='funcrunch_sales.csv'){
-  if(!rows.length) return;
-  const header = Object.keys(rows[0]);
+  if(!rows || rows.length === 0){
+    alert('No sales to export.');
+    return;
+  }
+  const sanitized = rows.map(r => ({
+    id: r.id,
+    ts: r.ts,
+    cart: JSON.stringify(r.cart || []),
+    qty: r.qty,
+    paymentType: r.paymentType,
+    studentBucks: r.studentBucks,
+    amountAED: r.amountAED
+  }));
+  const header = Object.keys(sanitized[0]);
   const csv = [
     header.join(','),
-    ...rows.map(r => header.map(h => {
-      const v = r[h] === null || r[h] === undefined ? '' : String(r[h]).replace(/"/g,'""');
+    ...sanitized.map(row => header.map(h => {
+      const v = row[h] === null || row[h] === undefined ? '' : String(row[h]).replace(/"/g,'""');
       return /,|\n|"/.test(v) ? `"${v}"` : v;
     }).join(','))
   ].join('\n');
@@ -52,58 +68,78 @@ function App(){
   const [cart, setCart] = useState([]);
   const [lastSaved, setLastSaved] = useState(null);
 
+  // load
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LOCAL_KEY);
-      if(raw) setSales(JSON.parse(raw));
+      if(raw){ setSales(JSON.parse(raw)); }
     } catch(e){ console.error(e); }
   }, []);
 
+  // save
   useEffect(() => {
     localStorage.setItem(LOCAL_KEY, JSON.stringify(sales));
     setLastSaved(new Date().toLocaleString());
   }, [sales]);
 
-  const totals = sales.reduce((acc,s) => {
+  // totals: handle both old single-item sales and new cart-style sales
+  const totals = sales.reduce((acc, s) => {
     acc.totalAED += Number(s.amountAED || 0);
     acc.totalSB += Number(s.studentBucks || 0);
-    acc.units[s.product] = (acc.units[s.product] || 0) + Number(s.qty || 0);
+
+    // if this sale has a cart (new format), count per item
+    if (Array.isArray(s.cart)) {
+      s.cart.forEach(item => {
+        if(!item || !item.product) return;
+        acc.units[item.product] = (acc.units[item.product] || 0) + Number(item.qty || 0);
+      });
+    } else if (s.product) {
+      // fallback to old format single-item sales
+      acc.units[s.product] = (acc.units[s.product] || 0) + Number(s.qty || 0);
+    }
     return acc;
   }, { totalAED:0, totalSB:0, units:{} });
 
   function addItemToCart(){
-    if(!product) return;
-    setCart(prev => [...prev, { product, qty: Number(qty), unitPrice: Number(unitPrice) }]);
+    const q = Math.max(1, Math.floor(Number(qty) || 1));
+    const price = Number(unitPrice) || 0;
+    setCart(prev => [...prev, { product, qty: q, unitPrice: price }]);
     setQty(1);
   }
 
-  function removeCartItem(i){
-    setCart(cart.filter((_,idx)=>idx!==i));
+  function removeCartItem(index){
+    setCart(prev => prev.filter((_, i) => i !== index));
   }
 
   function handleConfirmSale(){
     if(cart.length === 0){ alert("Add at least one item to the cart first."); return; }
-    let totalAED = cart.reduce((sum,i)=> sum + i.unitPrice * i.qty, 0);
+
+    const totalAEDFromCart = cart.reduce((sum, it) => sum + (Number(it.unitPrice||0) * Number(it.qty||0)), 0);
+    let totalAED = totalAEDFromCart;
     let sb = 0;
+
     if(paymentType === 'studentbucks'){
       if(studentBucksReceived !== ''){
         sb = Number(studentBucksReceived) || 0;
         totalAED = sb * SB_TO_AED;
       } else {
-        sb = Math.round((totalAED / SB_TO_AED) * 100) / 100;
+        sb = Math.round((totalAEDFromCart / SB_TO_AED) * 100) / 100;
       }
     }
+
+    // deep copy cart for immutability safety
+    const saleCart = cart.map(i => ({ ...i }));
 
     const newSale = {
       id: 'r' + Date.now(),
       ts: new Date().toLocaleString(),
-      cart,
-      qty: cart.reduce((sum,i)=>sum+i.qty,0),
-      unitPrice: null,
+      cart: saleCart,
+      qty: saleCart.reduce((sum,i)=>sum + Number(i.qty||0), 0),
       paymentType,
       studentBucks: sb,
       amountAED: Number(totalAED.toFixed(2))
     };
+
     setSales(prev => [newSale, ...prev]);
     setCart([]);
     setStudentBucksReceived('');
@@ -127,16 +163,15 @@ function App(){
         </div>
         <div className="text-right text-sm text-gray-600">
           <div>Last saved:</div>
-          <div className="font-medium">{lastSaved || '—'}</div>
+          <div className="font-medium">{ lastSaved || '—' }</div>
         </div>
       </header>
 
-      {/* Form */}
       <div className="bg-white shadow rounded-lg p-6 grid md:grid-cols-2 gap-4">
         <div className="space-y-3">
           <label className="block text-sm font-medium text-gray-700">Product</label>
           <select className="w-full rounded-md p-2 border" value={product} onChange={e=>setProduct(e.target.value)}>
-            {PRODUCTS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+            {PRODUCTS.map((p, idx) => <option key={`${p.key}-${idx}`} value={p.key}>{p.label}</option>)}
           </select>
 
           <div>
@@ -158,13 +193,13 @@ function App(){
               <h3 className="font-bold mb-2">🧾 Current Cart</h3>
               {cart.map((item,i)=>(
                 <div key={i} className="flex justify-between items-center text-sm mb-1">
-                  <span>{PRODUCTS.find(p=>p.key===item.product)?.label} × {item.qty}</span>
+                  <span>{PRODUCTS.find(p=>p.key===item.product)?.label || item.product} × {item.qty}</span>
                   <span>{formatAED(item.unitPrice * item.qty)}</span>
                   <button onClick={()=>removeCartItem(i)} className="text-red-500 text-xs ml-2">✖</button>
                 </div>
               ))}
               <div className="text-right font-semibold border-t pt-1">
-                {formatAED(cart.reduce((sum,i)=>sum+i.unitPrice*i.qty,0))}
+                {formatAED(cart.reduce((sum,i)=>sum + (i.unitPrice * i.qty), 0))}
               </div>
             </div>
           )}
@@ -187,7 +222,6 @@ function App(){
           <button onClick={handleConfirmSale} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md font-semibold w-full mt-4">✅ Confirm Sale</button>
         </div>
 
-        {/* Totals and stats */}
         <div className="space-y-4">
           <div className="p-4 rounded-lg bg-gradient-to-br from-yellow-100 to-red-50 shadow">
             <h3 className="font-bold text-lg text-yellow-700">Live Totals</h3>
@@ -205,8 +239,8 @@ function App(){
 
           <div className="p-4 bg-white rounded shadow">
             <h3 className="font-bold mb-2">Units Sold</h3>
-            {PRODUCTS.map(p=>(
-              <div key={p.key} className="flex justify-between text-sm">
+            {PRODUCTS.map((p, idx)=>(
+              <div key={`${p.key}-unit-${idx}`} className="flex justify-between text-sm">
                 <div>{p.label}</div>
                 <div className="font-semibold">{totals.units[p.key] || 0}</div>
               </div>
@@ -220,15 +254,14 @@ function App(){
         </div>
       </div>
 
-      {/* Transaction list */}
       <div className="bg-white p-4 rounded shadow">
         <h3 className="font-bold mb-2">Recent Receipts</h3>
         {sales.slice(0,5).map(s=>(
           <div key={s.id} className="border rounded p-2 mb-2 text-sm">
             <div className="font-semibold">{s.ts}</div>
-            {s.cart.map((i,idx)=>(
+            {Array.isArray(s.cart) && s.cart.map((i,idx)=>(
               <div key={idx} className="ml-3 flex justify-between">
-                <span>{PRODUCTS.find(p=>p.key===i.product)?.label} × {i.qty}</span>
+                <span>{PRODUCTS.find(p=>p.key===i.product)?.label || i.product} × {i.qty}</span>
                 <span>{formatAED(i.unitPrice * i.qty)}</span>
               </div>
             ))}
