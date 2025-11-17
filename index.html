@@ -1,402 +1,353 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>The Fun Crunch Sales Tracker</title>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Fun Crunch Sales Tracker 2.0</title>
 
-    <!-- React + Babel -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- React + Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Tailwind -->
-    <link
-      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
-      rel="stylesheet"
-    />
-  </head>
+  <!-- Tailwind -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+    rel="stylesheet"
+  />
+</head>
 
-  <body class="bg-gray-50 p-6">
-    <div id="root"></div>
+<body class="bg-gray-50 p-6">
+  <div id="root"></div>
 
-    <script type="text/babel">
-      const PRODUCTS = [
-        { key: "spinchip", label: "🍟 Spin (Chips)" },
-        { key: "spindrinkcan", label: "🥤 Spin (Drink - Can)" },
-        { key: "spindrinkcup", label: "🥤 Spin (Drink - Cup)" },
-        { key: "spindrinkcup", label: "🍬 Spin (Sweets)" },
-        { key: "random", label: "🕵️ Mystery Item (Spin)" },
-        { key: "random2", label: "🕵️ Mystery Item (Bag)" },
-        { key: "random2", label: "🕵️ Mystery Item (Sweets)" },
-        { key: "mysterychip", label: "🛍️ Mystery Bag (Chips)" },
-        { key: "mysterydrinkcan", label: "🥤 Mystery Bag (Drink - Can)" },
-        { key: "mysterydrinkcup", label: "🥤 Mystery Bag (Drink - Cup)" },
-         { key: "mysterydrinkcup", label: "🍬 Mystery Bag (Sweets)" },
-        { key: "chip", label: "🍟 Chips" },
-        { key: "drinkcan", label: "🧃 Drink (Can)" },
-        { key: "combo1", label: "🧃 Combo 1 (1 Chip + 1 Drink)" },
-        { key: "combo2", label: "🧃 Combo 2 (1 Chip/Drink + Card)" },
-        { key: "card5", label: "🃏 Refer A Friend Card (Free at AED 5)" },
-        { key: "card10", label: "🃏 Lucky Draw Card (Free at AED 10)" },
-        { key: "cards", label: "🃏 Cards" },
-        { key: "packs", label: "📦 Packs" },
-      ];
+  <script type="text/babel">
+    /* -------------------------------------------------------
+       PRODUCT LIST (CLEANED — NO CARDS SOLD)
+    --------------------------------------------------------*/
+    const PRODUCTS = [
+      { key: "chips", label: "🍟 Chips" },
+      { key: "drinkcan", label: "🥤 Drink (Can)" },
+      { key: "drinkcup", label: "🥤 Drink (Cup)" },
+      { key: "sweets", label: "🍬 Sweets" },
+      { key: "combo", label: "🧃 Combo (1 Chip + 1 Drink)" },
+      { key: "mysterybag", label: "🎁 Mystery Bag" },
+      { key: "spin", label: "🎡 Spin Item" },
+    ];
 
-      const SB_TO_AED = 5;
-      const LOCAL_KEY = "funcrunch_sales_v3";
+    const LOCAL_KEY = "funcrunch_sales_v4";
 
-      function formatAED(n) {
-        return "AED " + (Math.round(n * 100) / 100).toFixed(2);
+    function formatAED(n) {
+      return "AED " + Number(n).toFixed(2);
+    }
+
+    function nowTimestamp() {
+      const d = new Date();
+      return (
+        d.toLocaleDateString() + " • " +
+        d.toLocaleTimeString()
+      );
+    }
+
+    function App() {
+      const [sales, setSales] = React.useState([]);
+      const [product, setProduct] = React.useState(PRODUCTS[0].key);
+      const [unitPrice, setUnitPrice] = React.useState(5);
+      const [qty, setQty] = React.useState(1);
+      const [paymentType, setPaymentType] = React.useState("card");
+      
+      const [cart, setCart] = React.useState([]);
+      const [campaignName, setCampaignName] = React.useState("");
+      const [campaignActive, setCampaignActive] = React.useState(false);
+      const [luckyDrawEntries, setLuckyDrawEntries] = React.useState([]);
+
+      const [lastSaved, setLastSaved] = React.useState(null);
+
+      /* ---------------- Load saved data ---------------- */
+      React.useEffect(() => {
+        try {
+          const raw = localStorage.getItem(LOCAL_KEY);
+          if (!raw) return;
+          const data = JSON.parse(raw);
+          setSales(data.sales || []);
+          setLuckyDrawEntries(data.luckyDrawEntries || []);
+        } catch (err) {
+          console.error(err);
+        }
+      }, []);
+
+      /* ---------------- Save to storage ---------------- */
+      React.useEffect(() => {
+        localStorage.setItem(
+          LOCAL_KEY,
+          JSON.stringify({ sales, luckyDrawEntries })
+        );
+        setLastSaved(nowTimestamp());
+      }, [sales, luckyDrawEntries]);
+
+      /* ---------------- CART ACTIONS ---------------- */
+      function addItemToCart() {
+        setCart(prev => [...prev, {
+          product,
+          qty: Number(qty),
+          unitPrice: Number(unitPrice)
+        }]);
+        setQty(1);
       }
 
-      function downloadCSV(rows, filename = "funcrunch_sales.csv") {
-        if (!rows.length) return;
+      function removeItem(i) {
+        setCart(cart.filter((_, idx) => idx !== i));
+      }
+
+      /* ---------------- PROCESS SALE ---------------- */
+      function confirmSale() {
+        if (cart.length === 0) {
+          alert("Your cart is empty!");
+          return;
+        }
+
+        const totalAED = cart.reduce(
+          (sum, i) => sum + i.unitPrice * i.qty, 0
+        );
+
+        const receiptId = "FC-" + String(Date.now()).slice(-5);
+
+        const sale = {
+          id: receiptId,
+          ts: nowTimestamp(),
+          cart,
+          totalAED: Number(totalAED.toFixed(2)),
+          paymentType,
+          campaign: campaignActive ? campaignName : null,
+        };
+
+        setSales(prev => [sale, ...prev]);
+
+        /* Add Lucky Draw entry */
+        setLuckyDrawEntries(prev => [
+          ...prev,
+          { id: receiptId, ts: sale.ts, amount: totalAED }
+        ]);
+
+        setCart([]);
+      }
+
+      /* ---------------- RESET DAY ---------------- */
+      function resetAll() {
+        if (!confirm("Reset all data? Make sure to download CSV first!")) return;
+
+        setSales([]);
+        setLuckyDrawEntries([]);
+        localStorage.removeItem(LOCAL_KEY);
+      }
+
+      /* ---------------- TOTALS ---------------- */
+      const totals = sales.reduce((acc, s) => {
+        acc.revenue += s.totalAED;
+        return acc;
+      }, { revenue: 0 });
+
+      /* ---------------- CSV ---------------- */
+      function downloadCSV() {
+        const rows = sales.map(s => ({
+          Receipt: s.id,
+          Time: s.ts,
+          Payment: s.paymentType,
+          Campaign: s.campaign || "",
+          Total_AED: s.totalAED
+        }));
+
+        if (!rows.length) return alert("Nothing to export");
+
         const header = Object.keys(rows[0]);
         const csv = [
           header.join(","),
-          ...rows.map((r) =>
-            header
-              .map((h) => {
-                const v =
-                  r[h] === null || r[h] === undefined
-                    ? ""
-                    : String(r[h]).replace(/"/g, '""');
-                return /,|\n|"/.test(v) ? `"${v}"` : v;
-              })
-              .join(",")
-          ),
+          ...rows.map(r => header.map(h => r[h]).join(","))
         ].join("\n");
+
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
+
         const a = document.createElement("a");
         a.href = url;
-        a.download = filename;
+        a.download = "funcrunch_sales.csv";
         a.click();
         URL.revokeObjectURL(url);
       }
 
-      function App() {
-        const [sales, setSales] = React.useState([]);
-        const [product, setProduct] = React.useState(PRODUCTS[0].key);
-        const [unitPrice, setUnitPrice] = React.useState(5.0);
-        const [qty, setQty] = React.useState(1);
-        const [paymentType, setPaymentType] = React.useState("studentbucks");
-        const [studentBucksReceived, setStudentBucksReceived] = React.useState("");
-        const [cart, setCart] = React.useState([]);
-        const [lastSaved, setLastSaved] = React.useState(null);
+      return (
+        <div className="max-w-6xl mx-auto space-y-6">
+          <h1 className="text-4xl font-extrabold text-yellow-600 flex items-center gap-3">
+            🍟 The Fun Crunch Sales Tracker 2.0
+          </h1>
 
-        React.useEffect(() => {
-          try {
-            const raw = localStorage.getItem(LOCAL_KEY);
-            if (raw) setSales(JSON.parse(raw));
-          } catch (e) {
-            console.error(e);
-          }
-        }, []);
+          {/* ---------------- LEFT SIDE ---------------- */}
+          <div className="grid md:grid-cols-2 gap-6">
 
-        React.useEffect(() => {
-          localStorage.setItem(LOCAL_KEY, JSON.stringify(sales));
-          setLastSaved(new Date().toLocaleString());
-        }, [sales]);
+            {/* SALES ENTRY */}
+            <div className="bg-white p-6 shadow rounded-lg space-y-4">
+              <h2 className="font-bold text-lg text-yellow-700">New Sale</h2>
 
-        const totals = sales.reduce(
-          (acc, s) => {
-            acc.totalAED += Number(s.amountAED || 0);
-            acc.totalSB += Number(s.studentBucks || 0);
-            acc.units[s.product] =
-              (acc.units[s.product] || 0) + Number(s.qty || 0);
-            return acc;
-          },
-          { totalAED: 0, totalSB: 0, units: {} }
-        );
-
-        function addItemToCart() {
-          if (!product) return;
-          setCart((prev) => [
-            ...prev,
-            { product, qty: Number(qty), unitPrice: Number(unitPrice) },
-          ]);
-          setQty(1);
-        }
-
-        function removeCartItem(i) {
-          setCart(cart.filter((_, idx) => idx !== i));
-        }
-
-        function handleConfirmSale() {
-          if (cart.length === 0) {
-            alert("Add at least one item to the cart first.");
-            return;
-          }
-          let totalAED = cart.reduce((sum, i) => sum + i.unitPrice * i.qty, 0);
-          let sb = 0;
-          if (paymentType === "studentbucks") {
-            if (studentBucksReceived !== "") {
-              sb = Number(studentBucksReceived) || 0;
-              totalAED = sb * SB_TO_AED;
-            } else {
-              sb = Math.round((totalAED / SB_TO_AED) * 100) / 100;
-            }
-          }
-
-          const newSale = {
-            id: "r" + Date.now(),
-            ts: new Date().toLocaleString(),
-            cart,
-            qty: cart.reduce((sum, i) => sum + i.qty, 0),
-            paymentType,
-            studentBucks: sb,
-            amountAED: Number(totalAED.toFixed(2)),
-          };
-          setSales((prev) => [newSale, ...prev]);
-          setCart([]);
-          setStudentBucksReceived("");
-        }
-
-        function handleResetDay() {
-          if (!confirm("Reset day? Download CSV first to keep a backup.")) return;
-          if (sales.length)
-            downloadCSV(
-              sales,
-              "funcrunch_sales_backup_" +
-                new Date().toISOString().slice(0, 10) +
-                ".csv"
-            );
-          setSales([]);
-          localStorage.removeItem(LOCAL_KEY);
-        }
-
-        return (
-          <div className="space-y-6 max-w-5xl mx-auto">
-            <header className="flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-extrabold text-yellow-600 flex items-center gap-3">
-                  <span>🍟</span> <span>The Fun Crunch</span>
-                </h1>
-                <p className="text-sm text-gray-600">
-                  Multi-item Sales Tracker
-                </p>
-              </div>
-              <div className="text-right text-sm text-gray-600">
-                <div>Last saved:</div>
-                <div className="font-medium">{lastSaved || "—"}</div>
-              </div>
-            </header>
-
-            <div className="bg-white shadow rounded-lg p-6 grid md:grid-cols-2 gap-4">
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700">
-                  Product
-                </label>
-                <select
-                  className="w-full rounded-md p-2 border"
+                <label className="font-medium text-sm">Product</label>
+                <select className="w-full p-2 border rounded"
                   value={product}
                   onChange={(e) => setProduct(e.target.value)}
                 >
-                  {PRODUCTS.map((p) => (
+                  {PRODUCTS.map(p => (
                     <option key={p.key} value={p.key}>
                       {p.label}
                     </option>
                   ))}
                 </select>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Unit Price (AED)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full rounded-md p-2 border"
-                    value={unitPrice}
-                    onChange={(e) => setUnitPrice(e.target.value)}
-                  />
-                </div>
-
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Quantity
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      className="w-full rounded-md p-2 border"
-                      value={qty}
-                      onChange={(e) => setQty(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <button
-                  onClick={addItemToCart}
-                  className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-md font-semibold w-full"
-                >
-                  ➕ Add to Cart
-                </button>
-
-                {cart.length > 0 && (
-                  <div className="bg-yellow-50 border p-3 rounded mt-3">
-                    <h3 className="font-bold mb-2">🧾 Current Cart</h3>
-                    {cart.map((item, i) => (
-                      <div
-                        key={i}
-                        className="flex justify-between items-center text-sm mb-1"
-                      >
-                        <span>
-                          {
-                            PRODUCTS.find((p) => p.key === item.product)?.label
-                          }{" "}
-                          × {item.qty}
-                        </span>
-                        <span>{formatAED(item.unitPrice * item.qty)}</span>
-                        <button
-                          onClick={() => removeCartItem(i)}
-                          className="text-red-500 text-xs ml-2"
-                        >
-                          ✖
-                        </button>
-                      </div>
-                    ))}
-                    <div className="text-right font-semibold border-t pt-1">
-                      {formatAED(
-                        cart.reduce((sum, i) => sum + i.unitPrice * i.qty, 0)
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Payment Type
-                  </label>
-                  <select
-                    className="w-full rounded-md p-2 border"
-                    value={paymentType}
-                    onChange={(e) => setPaymentType(e.target.value)}
-                  >
-                    <option value="studentbucks">
-                      Card (Ziina)
-                    </option>
-                    <option value="aed">💵 AED (Cash)</option>
-                  </select>
-                </div>
-
-                {paymentType === "studentbucks" && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Student Bucks Received (optional)
-                    </label>
-                    <input
-                      placeholder="Leave blank to auto-calc"
-                      type="number"
-                      step="0.01"
-                      className="w-full rounded-md p-2 border"
-                      value={studentBucksReceived}
-                      onChange={(e) =>
-                        setStudentBucksReceived(e.target.value)
-                      }
-                    />
-                  </div>
-                )}
-
-                <button
-                  onClick={handleConfirmSale}
-                  className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md font-semibold w-full mt-4"
-                >
-                  ✅ Confirm Sale
-                </button>
               </div>
 
-              <div className="space-y-4">
-                <div className="p-4 rounded-lg bg-gradient-to-br from-yellow-100 to-red-50 shadow">
-                  <h3 className="font-bold text-lg text-yellow-700">
-                    Live Totals
-                  </h3>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    <div className="p-2 bg-white rounded text-center shadow">
-                      <div className="text-xs text-gray-500">Total Revenue</div>
-                      <div className="font-semibold text-lg">
-                        {formatAED(totals.totalAED)}
-                      </div>
-                    </div>
-                    <div className="p-2 bg-white rounded text-center shadow">
-                      <div className="text-xs text-gray-500">Total SB</div>
-                      <div className="font-semibold text-lg">
-                        {totals.totalSB || 0} SB
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white rounded shadow max-h-64 overflow-y-auto">
-                  <h3 className="font-bold mb-2">Units Sold</h3>
-                  {PRODUCTS.map((p) => (
-                    <div
-                      key={p.key}
-                      className="flex justify-between text-sm border-b last:border-none py-1"
-                    >
-                      <div>{p.label}</div>
-                      <div className="font-semibold">
-                        {totals.units[p.key] || 0}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => downloadCSV(sales)}
-                    className="flex-1 bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-md"
-                  >
-                    📥 CSV
-                  </button>
-                  <button
-                    onClick={handleResetDay}
-                    className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-md"
-                  >
-                    Reset
-                  </button>
-                </div>
+              <div>
+                <label className="font-medium text-sm">Unit Price (AED)</label>
+                <input
+                  type="number"
+                  value={unitPrice}
+                  onChange={(e) => setUnitPrice(e.target.value)}
+                  className="w-full p-2 border rounded"
+                />
               </div>
-            </div>
 
-            <div className="bg-white p-4 rounded shadow">
-              <h3 className="font-bold mb-2">Recent Receipts</h3>
-              {sales.slice(0, 5).map((s) => (
-                <div key={s.id} className="border rounded p-2 mb-2 text-sm">
-                  <div className="font-semibold">{s.ts}</div>
-                  {s.cart.map((i, idx) => (
-                    <div key={idx} className="ml-3 flex justify-between">
+              <div>
+                <label className="font-medium text-sm">Quantity</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={qty}
+                  onChange={(e) => setQty(e.target.value)}
+                  className="w-full p-2 border rounded"
+                />
+              </div>
+
+              <button
+                onClick={addItemToCart}
+                className="bg-yellow-500 hover:bg-yellow-600 text-white w-full p-2 rounded font-medium"
+              >
+                ➕ Add To Cart
+              </button>
+
+              {cart.length > 0 && (
+                <div className="bg-yellow-50 p-3 rounded border mt-3">
+                  <h3 className="font-bold mb-2">Cart</h3>
+                  {cart.map((i, idx) => (
+                    <div key={idx} className="flex justify-between py-1 text-sm">
                       <span>
-                        {PRODUCTS.find((p) => p.key === i.product)?.label} ×{" "}
-                        {i.qty}
+                        {PRODUCTS.find(p => p.key === i.product).label} × {i.qty}
                       </span>
                       <span>{formatAED(i.unitPrice * i.qty)}</span>
+                      <button
+                        onClick={() => removeItem(idx)}
+                        className="text-red-500 ml-2"
+                      >
+                        ✖
+                      </button>
                     </div>
                   ))}
-                  <div className="text-right font-bold mt-1 border-t pt-1">
-                    Total:{" "}
-                    {s.paymentType === "studentbucks"
-                      ? `${s.studentBucks} SB (${formatAED(s.amountAED)})`
-                      : formatAED(s.amountAED)}
-                  </div>
                 </div>
-              ))}
-              {!sales.length && (
-                <div className="text-gray-500 text-sm">No sales yet.</div>
               )}
+
+              <div>
+                <label className="font-medium text-sm">Payment Type</label>
+                <select
+                  className="w-full p-2 border rounded"
+                  value={paymentType}
+                  onChange={e => setPaymentType(e.target.value)}
+                >
+                  <option value="card">💳 Card</option>
+                  <option value="cash">💵 Cash</option>
+                </select>
+              </div>
+
+              <div className="mt-4 border-t pt-4">
+                <label className="font-medium text-sm">Campaign Mode</label>
+                <div className="flex gap-2 mt-1">
+                  <input
+                    type="checkbox"
+                    checked={campaignActive}
+                    onChange={(e) => setCampaignActive(e.target.checked)}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Campaign name"
+                    className="flex-1 p-2 border rounded"
+                    disabled={!campaignActive}
+                    value={campaignName}
+                    onChange={(e) => setCampaignName(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={confirmSale}
+                className="bg-green-500 hover:bg-green-600 text-white w-full p-3 rounded font-semibold mt-3"
+              >
+                ✅ Confirm Sale
+              </button>
             </div>
 
-            <footer className="text-center text-xs text-gray-500 mt-6">
-              Built for The Fun Crunch • Multi-item edition
-            </footer>
-          </div>
-        );
-      }
+            {/* RIGHT SIDE PANELS */}
+            <div className="space-y-4">
+              <div className="bg-white p-4 shadow rounded">
+                <h3 className="font-bold text-lg text-yellow-700">Totals</h3>
+                <p className="mt-2 text-xl font-bold">{formatAED(totals.revenue)}</p>
+              </div>
 
-      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-    </script>
-  </body>
+              <div className="bg-white p-4 shadow rounded max-h-64 overflow-y-auto">
+                <h3 className="font-bold mb-2">Lucky Draw Entries</h3>
+                {luckyDrawEntries.slice(-10).map((e, idx) => (
+                  <div key={idx} className="border-b py-1 text-sm">
+                    {e.id} • {formatAED(e.amount)}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={downloadCSV}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded">
+                  📥 Export CSV
+                </button>
+
+                <button onClick={resetAll}
+                  className="flex-1 bg-red-100 hover:bg-red-200 text-red-600 p-2 rounded">
+                  Reset
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Sales */}
+          <div className="bg-white p-4 rounded shadow mt-6">
+            <h3 className="font-bold text-lg mb-3">Recent Sales</h3>
+            {sales.slice(0, 6).map(s => (
+              <div key={s.id} className="border rounded p-3 mb-2 text-sm">
+                <div className="font-bold">{s.id}</div>
+                <div className="text-gray-600">{s.ts}</div>
+
+                {s.cart.map((i, idx) => (
+                  <div key={idx} className="flex justify-between ml-3">
+                    <span>{PRODUCTS.find(p => p.key === i.product).label} × {i.qty}</span>
+                    <span>{formatAED(i.unitPrice * i.qty)}</span>
+                  </div>
+                ))}
+
+                <div className="text-right font-bold border-t pt-1 mt-2">
+                  Total: {formatAED(s.totalAED)} ({s.paymentType})
+                </div>
+
+                {s.campaign && (
+                  <div className="text-xs text-blue-600 text-right">Campaign: {s.campaign}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
 </html>
