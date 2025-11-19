@@ -1,558 +1,271 @@
 <!DOCTYPE html>
+
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>The Fun Crunch — Advanced Sales Tracker</title>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>The Fun Crunch — Advanced Sales Tracker</title>
 
-    <!-- React + Babel -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- React + ReactDOM -->
 
-    <!-- Tailwind (CDN) -->
-    <link
-      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
-      rel="stylesheet"
-    />
-    <style>
-      /* Small print styles for auto-print receipts */
-      @media print {
-        body * { visibility: hidden; }
-        .receipt-print-area, .receipt-print-area * { visibility: visible; }
-        .receipt-print-area { position: absolute; left: 0; top: 0; width: 100%; }
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Tailwind -->
+
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+
+  <style>
+    @media print {
+      body * { visibility: hidden; }
+      .receipt-print-area, .receipt-print-area * { visibility: visible; }
+      .receipt-print-area { position: absolute; left:0; top:0; width:100%; }
+    }
+  </style>
+
+</head>
+
+<body class="bg-gray-50 p-6 font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    // ---------- Config ----------
+    const LOCAL_KEY = "funcrunch_sales_v5";
+    const TIMEZONE = "Asia/Dubai";
+
+    const PRODUCTS = [
+      { key: "chip", label: "🍟 Chips", price: 5.0, stock: 50, img: "🍟" },
+      { key: "drinkcan", label: "🥤 Drink (Can)", price: 4.0, stock: 40, img: "🥤" },
+      { key: "sweets", label: "🍬 Sweets", price: 2.0, stock: 100, img: "🍬" },
+      { key: "combo1", label: "🧃 Combo 1 (1 Chip + 1 Drink)", price: 8.0, stock: 20, img: "🧃" },
+      { key: "mysterybag", label: "🛍️ Mystery Bag", price: 6.0, stock: 15, img: "🎁" },
+
+      // Games
+      { key: "spinwheel", label: "Spin the Wheel / Lucky Draw", price: 8, stock: 1000, img: "🎡" },
+      { key: "dicespin", label: "Dice Spin", price: 8, stock: 1000, img: "🎲" },
+
+      { key: "draw", label: "Luckydraw (Standard)", price: 2, stock: 1000, img: "🎲" },
+      { key: "drawprem", label: "Luckydraw (Premium)", price: 4, stock: 1000, img: "🎯" },
+      { key: "scratchoff", label: "Scratch Card", price: 2, stock: 1000, img: "🎫" }
+    ];
+
+    function formatAED(n) {
+      return "AED " + (Math.round(n*100)/100).toFixed(2);
+    }
+
+    function nowString() {
+      try {
+        return new Date().toLocaleString("en-GB", {
+          timeZone: TIMEZONE,
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false
+        }) + ` (${TIMEZONE})`;
+      } catch(e) {
+        return new Date().toLocaleString() + ` (${TIMEZONE})`;
       }
-    </style>
-  </head>
+    }
 
-  <body class="bg-gray-50 p-6 font-sans">
-    <div id="root"></div>
+    function downloadCSV(rows, filename="funcrunch_sales.csv") {
+      if (!rows.length) return;
+      const header = Object.keys(rows[0]);
+      const csv = [header.join(","), ...rows.map(r => header.map(h=>{
+        const v = r[h]==null ? "" : String(r[h]).replace(/"/g,'""');
+        return /,|\n|"/.test(v) ? `"${v}"` : v;
+      }).join(","))].join("\n");
+      const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
 
-    <script type="text/babel">
-      // ---------- Configuration ----------
-      const LOCAL_KEY = "funcrunch_sales_v4";
-      const TIMEZONE = "Asia/Dubai"; // accurate time zone for receipts
-      // Initial product catalog (cards / lucky draw removed)
-      const PRODUCTS = [
-        const PRODUCTS = [
-  { key: "chip", label: "🍟 Chips", price: 5.0, stock: 50, img: "🍟" },
-  { key: "drinkcan", label: "🥤 Drink (Can)", price: 4.0, stock: 40, img: "🥤" },
-  { key: "drinkcup", label: "🥤 Drink (Cup)", price: 3.5, stock: 30, img: "🥤" },
-  { key: "sweets", label: "🍬 Sweets", price: 2.0, stock: 100, img: "🍬" },
-  { key: "combo1", label: "🧃 Combo 1 (1 Chip + 1 Drink)", price: 8.0, stock: 20, img: "🧃" },
-  { key: "mysterybag", label: "🛍️ Mystery Bag", price: 6.0, stock: 15, img: "🎁" },
+    // ---------- App ----------
+    function App() {
+      const [products,setProducts] = React.useState(PRODUCTS);
+      const [sales,setSales] = React.useState([]);
+      const [cart,setCart] = React.useState([]);
+      const [selectedProduct,setSelectedProduct] = React.useState(PRODUCTS[0].key);
+      const [qty,setQty] = React.useState(1);
+      const [unitPrice,setUnitPrice] = React.useState(PRODUCTS[0].price);
+      const [itemDiscount,setItemDiscount] = React.useState(0);
+      const [overallDiscount,setOverallDiscount] = React.useState(0);
+      const [paymentType,setPaymentType] = React.useState("card");
+      const [autoPrint,setAutoPrint] = React.useState(false);
+      const [lastSaved,setLastSaved] = React.useState(null);
+      const [campaigns,setCampaigns] = React.useState(["Walk-in","Promo A"]);
+      const [selectedCampaign,setSelectedCampaign] = React.useState("Walk-in");
+      const [lowStockThreshold,setLowStockThreshold] = React.useState(5);
 
-  // Updated games
-  { key: "spinwheel", label: "Spin the Wheel / Lucky Draw", price: 8, stock: 1000, img: "🎡" },
-  { key: "dicespin", label: "Dice Spin", price: 8, stock: 1000, img: "🎲" },
-
-  { key: "draw", label: "Luckydraw (Standard)", price: 2, stock: 1000, img: "🎲" },
-  { key: "drawprem", label: "Luckydraw (Premium)", price: 4, stock: 1000, img: "🎯" },
-  { key: "scratchoff", label: "Scratch Card", price: 2, stock: 1000, img: "🎫" }
-];
-
-      ];
-
-      // ---------- Helpers ----------
-      function formatAED(n) {
-        return "AED " + (Math.round(n * 100) / 100).toFixed(2);
-      }
-
-      function nowString() {
-        // accurate localized timestamp in Asia/Dubai
+      React.useEffect(()=>{
         try {
-          return new Date().toLocaleString("en-GB", {
-            timeZone: TIMEZONE,
-            year: "numeric",
-            month: "short",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            hour12: false
-          }) + ` (${TIMEZONE})`;
-        } catch (e) {
-          return new Date().toLocaleString() + ` (${TIMEZONE})`;
-        }
-      }
-
-      function downloadCSV(rows, filename = "funcrunch_sales.csv") {
-        if (!rows.length) return;
-        const header = Object.keys(rows[0]);
-        const csv = [
-          header.join(","),
-          ...rows.map((r) =>
-            header
-              .map((h) => {
-                const v =
-                  r[h] === null || r[h] === undefined
-                    ? ""
-                    : String(r[h]).replace(/"/g, '""');
-                return /,|\n|"/.test(v) ? `"${v}"` : v;
-              })
-              .join(",")
-          ),
-        ].join("\n");
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-
-      // ---------- App ----------
-      function App() {
-        // state
-        const [products, setProducts] = React.useState(PRODUCTS);
-        const [sales, setSales] = React.useState([]);
-        const [cart, setCart] = React.useState([]);
-        const [selectedProduct, setSelectedProduct] = React.useState(PRODUCTS[0].key);
-        const [qty, setQty] = React.useState(1);
-        const [unitPrice, setUnitPrice] = React.useState(PRODUCTS[0].price);
-        const [itemDiscount, setItemDiscount] = React.useState(0); // percent
-        const [overallDiscount, setOverallDiscount] = React.useState(0); // percent on total
-        const [paymentType, setPaymentType] = React.useState("card");
-        const [autoPrint, setAutoPrint] = React.useState(false);
-        const [lastSaved, setLastSaved] = React.useState(null);
-        const [campaigns, setCampaigns] = React.useState(["Walk-in", "Promo A"]);
-        const [selectedCampaign, setSelectedCampaign] = React.useState("Walk-in");
-        const [lowStockThreshold, setLowStockThreshold] = React.useState(5);
-
-        // load saved
-        React.useEffect(() => {
-          try {
-            const raw = localStorage.getItem(LOCAL_KEY);
-            if (raw) {
-              const parsed = JSON.parse(raw);
-              if (parsed.products) setProducts(parsed.products);
-              if (parsed.sales) setSales(parsed.sales);
-              if (parsed.campaigns) setCampaigns(parsed.campaigns);
-            }
-          } catch (e) {
-            console.error("Failed to load:", e);
+          const raw = localStorage.getItem(LOCAL_KEY);
+          if(raw){
+            const parsed = JSON.parse(raw);
+            if(parsed.products) setProducts(parsed.products);
+            if(parsed.sales) setSales(parsed.sales);
+            if(parsed.campaigns) setCampaigns(parsed.campaigns);
           }
-        }, []);
+        }catch(e){console.error("Load failed:",e);}
+      },[]);
 
-        // persist sales & products
-        React.useEffect(() => {
-          const toSave = { products, sales, campaigns };
-          localStorage.setItem(LOCAL_KEY, JSON.stringify(toSave));
-          setLastSaved(nowString());
-        }, [products, sales, campaigns]);
+      React.useEffect(()=>{
+        const toSave = {products,sales,campaigns};
+        localStorage.setItem(LOCAL_KEY,JSON.stringify(toSave));
+        setLastSaved(nowString());
+      },[products,sales,campaigns]);
 
-        // derived totals
-        const totals = sales.reduce(
-          (acc, s) => {
-            acc.totalAED += Number(s.amountAED || 0);
-            acc.units[s.productKey] = (acc.units[s.productKey] || 0) + Number(s.qty || 0);
-            return acc;
-          },
-          { totalAED: 0, units: {} }
-        );
+      const totals = sales.reduce((acc,s)=>{
+        acc.totalAED += Number(s.amountAED||0);
+        acc.units[s.productKey] = (acc.units[s.productKey]||0)+Number(s.qty||0);
+        return acc;
+      },{totalAED:0,units:{}});
 
-        // ---------- Cart operations ----------
-        function addItemToCart() {
-          if (!selectedProduct) return alert("Select a product.");
-          const prod = products.find((p) => p.key === selectedProduct);
-          const q = Number(qty) || 0;
-          if (q < 1) return alert("Quantity must be at least 1.");
-          if (prod.stock < q) return alert(`Not enough stock for ${prod.label}. Current: ${prod.stock}`);
-          const price = Number(unitPrice) || prod.price;
-          const discountPct = Math.max(0, Math.min(100, Number(itemDiscount) || 0));
-          setCart((prev) => [
-            ...prev,
-            {
-              productKey: prod.key,
-              label: prod.label,
-              qty: q,
-              unitPrice: price,
-              itemDiscountPct: discountPct,
-            },
-          ]);
-          // reset small inputs
-          setQty(1);
-          setItemDiscount(0);
-        }
-
-        function removeCartItem(i) {
-          setCart(cart.filter((_, idx) => idx !== i));
-        }
-
-        function applyInventoryChange(productKey, delta) {
-          setProducts((prev) => prev.map((p) => p.key === productKey ? { ...p, stock: Math.max(0, p.stock + delta) } : p));
-        }
-
-        // ---------- Confirm sale ----------
-        function handleConfirmSale() {
-          if (!cart.length) return alert("Add items to cart first.");
-          // compute totals
-          let subtotal = 0;
-          cart.forEach((it) => {
-            const line = it.unitPrice * it.qty;
-            const discounted = line * (1 - (it.itemDiscountPct || 0) / 100);
-            subtotal += discounted;
-          });
-          const overallDisc = Math.max(0, Math.min(100, Number(overallDiscount) || 0));
-          const totalAfterOverall = subtotal * (1 - overallDisc / 100);
-          const amountAED = Number((Math.round(totalAfterOverall * 100) / 100).toFixed(2));
-
-          // reduce inventory
-          const newProducts = products.map((p) => {
-            const inCart = cart.find((c) => c.productKey === p.key);
-            if (!inCart) return p;
-            return { ...p, stock: Math.max(0, p.stock - inCart.qty) };
-          });
-          setProducts(newProducts);
-
-          // construct sale object
-          const sale = {
-            id: "r" + Date.now(),
-            ts: nowString(),
-            campaign: selectedCampaign,
-            paymentType,
-            cart,
-            qty: cart.reduce((s, i) => s + i.qty, 0),
-            overallDiscountPct: overallDisc,
-            amountAED,
-            cashier: "POS" // could be expanded to user login
-          };
-
-          setSales((prev) => [sale, ...prev]);
-          setCart([]);
-          setOverallDiscount(0);
-
-          // auto-print (open new window with simple receipt content, then print)
-          if (autoPrint) {
-            printReceipt(sale);
-          }
-        }
-
-        function printReceipt(sale) {
-          const receiptHtml = generateReceiptHtml(sale);
-          // open small new window
-          const w = window.open("", "_blank", "width=400,height=800");
-          if (!w) return alert("Popup blocked — allow popups to auto-print receipts.");
-          w.document.write(receiptHtml);
-          w.document.close();
-          // give browser a small moment to render
-          setTimeout(() => { w.focus(); w.print(); /* optionally close */ }, 300);
-        }
-
-        function generateReceiptHtml(sale) {
-          const lines = sale.cart.map(i => {
-            const lineTotal = (i.unitPrice * i.qty) * (1 - (i.itemDiscountPct || 0) / 100);
-            const discText = i.itemDiscountPct ? ` (-${i.itemDiscountPct}%)` : "";
-            return `<tr><td style="padding:4px">${i.label} × ${i.qty}${discText}</td><td style="padding:4px;text-align:right">${formatAED(lineTotal)}</td></tr>`;
-          }).join("");
-
-          return `
-            <html>
-              <head>
-                <meta charset="utf-8"/>
-                <title>Receipt ${sale.id}</title>
-                <style>
-                  body { font-family: Arial, sans-serif; padding: 12px; }
-                  h2 { margin-bottom: 6px; }
-                  table { width: 100%; border-collapse: collapse; margin-top:8px; }
-                  td { border-bottom: 1px dashed #ddd; }
-                  .total { font-weight: bold; font-size: 1.1em; }
-                </style>
-              </head>
-              <body>
-                <div class="receipt-print-area">
-                <h2>The Fun Crunch</h2>
-                <div>Receipt: ${sale.id}</div>
-                <div>Time: ${sale.ts}</div>
-                <div>Campaign: ${sale.campaign}</div>
-                <div>Payment: ${sale.paymentType}</div>
-                <table>${lines}</table>
-                <div style="margin-top:8px" class="total">TOTAL: ${formatAED(sale.amountAED)}</div>
-                <div style="margin-top:10px;font-size:12px;color:#666">Thank you! — The Fun Crunch</div>
-                </div>
-              </body>
-            </html>
-          `;
-        }
-
-        // ---------- Campaign utilities ----------
-        function addCampaign(name) {
-          const nm = (name || "").trim();
-          if (!nm) return;
-          if (campaigns.includes(nm)) return alert("Campaign already exists.");
-          setCampaigns((c) => [nm, ...c]);
-          setSelectedCampaign(nm);
-        }
-
-        function resetCampaignTotals(campaignName) {
-          if (!confirm(`Reset sales for campaign "${campaignName}"? This will remove sales entries for that campaign.`)) return;
-          setSales((prev) => prev.filter((s) => s.campaign !== campaignName));
-        }
-
-        // ---------- CSV Export ----------
-        function exportSalesCSV() {
-          if (!sales.length) return alert("No sales to export.");
-          const rows = sales.map(s => ({
-            id: s.id,
-            ts: s.ts,
-            campaign: s.campaign,
-            paymentType: s.paymentType,
-            qty: s.qty,
-            amountAED: s.amountAED,
-            items: s.cart.map(i => `${i.label}×${i.qty}${i.itemDiscountPct ? `(-${i.itemDiscountPct}%)` : ""}`).join(" | ")
-          }));
-          downloadCSV(rows, `funcrunch_sales_${new Date().toISOString().slice(0,10)}.csv`);
-        }
-
-        // ---------- UI ----------
-        return (
-          <div className="max-w-6xl mx-auto space-y-6">
-            <header className="flex items-start justify-between">
-              <div>
-                <h1 className="text-3xl font-extrabold text-yellow-600 flex items-center gap-3">
-                  <span>🍟</span> <span>The Fun Crunch — Advanced POS</span>
-                </h1>
-                <p className="text-sm text-gray-600">Sales tracker — discounts, inventory, campaigns, print receipts</p>
-              </div>
-              <div className="text-right text-sm text-gray-600">
-                <div>Last saved:</div>
-                <div className="font-medium">{lastSaved || "—"}</div>
-              </div>
-            </header>
-
-            <main className="grid md:grid-cols-3 gap-6">
-              {/* Left: Item add */}
-              <div className="bg-white p-4 rounded shadow space-y-3">
-                <h2 className="font-bold">Add Item to Cart</h2>
-
-                <label className="block text-sm text-gray-700">Product</label>
-                <select
-                  className="w-full rounded-md p-2 border"
-                  value={selectedProduct}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSelectedProduct(val);
-                    const p = products.find(x => x.key === val);
-                    if (p) setUnitPrice(p.price);
-                  }}
-                >
-                  {products.map(p => (
-                    <option key={p.key} value={p.key}>
-                      {p.label} — {formatAED(p.price)} — Stock: {p.stock}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="text-sm text-gray-700">Quantity</label>
-                    <input className="w-full p-2 border rounded" type="number" min="1" value={qty} onChange={(e)=>setQty(e.target.value)} />
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-sm text-gray-700">Unit Price (AED)</label>
-                    <input className="w-full p-2 border rounded" type="number" step="0.01" value={unitPrice} onChange={(e)=>setUnitPrice(e.target.value)} />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm text-gray-700">Item Discount (%)</label>
-                  <input className="w-full p-2 border rounded" type="number" min="0" max="100" value={itemDiscount} onChange={(e)=>setItemDiscount(e.target.value)} />
-                </div>
-
-                <button className="w-full bg-yellow-500 hover:bg-yellow-600 text-white py-2 rounded font-semibold" onClick={addItemToCart}>➕ Add to Cart</button>
-
-                {/* Cart preview */}
-                {cart.length > 0 && (
-                  <div className="bg-yellow-50 p-3 rounded mt-2 border">
-                    <h3 className="font-semibold">🧾 Cart</h3>
-                    {cart.map((it,i)=>(
-                      <div key={i} className="flex items-center justify-between text-sm py-1">
-                        <div>
-                          <div className="font-medium">{it.label}</div>
-                          <div className="text-gray-600 text-xs">{it.qty} × {formatAED(it.unitPrice)} {it.itemDiscountPct ? ` • -${it.itemDiscountPct}%` : ""}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-semibold">{formatAED((it.unitPrice * it.qty) * (1 - (it.itemDiscountPct||0)/100))}</div>
-                          <button className="text-red-500 text-xs mt-1" onClick={()=>removeCartItem(i)}>Remove</button>
-                        </div>
-                      </div>
-                    ))}
-
-                    <div className="text-right font-semibold border-t pt-2">
-                      Subtotal: {formatAED(cart.reduce((s,i)=> s + (i.unitPrice * i.qty) * (1 - (i.itemDiscountPct||0)/100),0))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Middle: Checkout & Campaign */}
-              <div className="bg-white p-4 rounded shadow space-y-3">
-                <h2 className="font-bold">Checkout</h2>
-
-                <label className="text-sm text-gray-700">Campaign</label>
-                <div className="flex gap-2">
-                  <select className="flex-1 p-2 border rounded" value={selectedCampaign} onChange={(e)=>setSelectedCampaign(e.target.value)}>
-                    {campaigns.map(c=> <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <button className="px-3 py-2 bg-gray-100 rounded" onClick={()=>{
-                    const name = prompt("New campaign name:");
-                    if (name) addCampaign(name);
-                  }}>+ Add</button>
-                  <button className="px-3 py-2 bg-red-100 text-red-700 rounded" onClick={()=>resetCampaignTotals(selectedCampaign)}>Reset Campaign</button>
-                </div>
-
-                <div>
-                  <label className="text-sm text-gray-700">Overall Discount (%)</label>
-                  <input className="w-full p-2 border rounded" type="number" min="0" max="100" value={overallDiscount} onChange={(e)=>setOverallDiscount(e.target.value)} />
-                </div>
-
-                <div>
-                  <label className="text-sm text-gray-700">Payment Type</label>
-                  <select className="w-full p-2 border rounded" value={paymentType} onChange={(e)=>setPaymentType(e.target.value)}>
-                    <option value="card">Card (Ziina)</option>
-                    <option value="aed">💵 AED (Cash)</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input type="checkbox" id="autoprint" checked={autoPrint} onChange={(e)=>setAutoPrint(e.target.checked)} />
-                  <label htmlFor="autoprint" className="text-sm text-gray-700">Auto-print receipt</label>
-                </div>
-
-                <button className="w-full bg-green-500 hover:bg-green-600 text-white py-2 rounded font-semibold" onClick={handleConfirmSale}>✅ Confirm Sale</button>
-
-                <div className="text-sm text-gray-600">
-                  <div>Cart items: <strong>{cart.reduce((s,i)=>s+i.qty,0)}</strong></div>
-                  <div>Estimated total: <strong>{formatAED(cart.reduce((s,i)=> s + (i.unitPrice * i.qty) * (1 - (i.itemDiscountPct||0)/100),0) * (1 - (overallDiscount||0)/100))}</strong></div>
-                </div>
-              </div>
-
-              {/* Right: Inventory, settings, totals */}
-              <div className="bg-white p-4 rounded shadow space-y-3">
-                <h2 className="font-bold">Inventory & Settings</h2>
-
-                <div className="space-y-2">
-                  <div className="text-sm text-gray-700">Products</div>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {products.map(p => (
-                      <div key={p.key} className="flex items-center justify-between p-2 rounded border">
-                        <div className="flex items-center gap-3">
-                          <div className="text-2xl">{p.img}</div>
-                          <div>
-                            <div className="font-medium">{p.label}</div>
-                            <div className="text-xs text-gray-500">{formatAED(p.price)} • Stock: {p.stock} {p.stock <= lowStockThreshold && <span className="ml-2 text-xs text-red-600 font-semibold">LOW</span>}</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button className="px-2 py-1 bg-gray-100 rounded" onClick={()=>applyInventoryChange(p.key, 1)}>+1</button>
-                          <button className="px-2 py-1 bg-gray-100 rounded" onClick={()=>applyInventoryChange(p.key, -1)}>-1</button>
-                          <button className="px-2 py-1 bg-blue-100 rounded" onClick={()=>{
-                            const newStock = prompt(`Set stock for ${p.label}:`, String(p.stock));
-                            if (newStock !== null) {
-                              const n = parseInt(newStock,10);
-                              if (!isNaN(n)) {
-                                setProducts(prev => prev.map(pp => pp.key === p.key ? { ...pp, stock: n } : pp));
-                              }
-                            }
-                          }}>Set</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t">
-                  <label className="text-sm text-gray-700">Low stock threshold</label>
-                  <input className="w-full p-2 border rounded" type="number" min="0" value={lowStockThreshold} onChange={(e)=>setLowStockThreshold(e.target.value)} />
-                </div>
-
-                <div className="pt-2 border-t">
-                  <h3 className="font-semibold">Quick Actions</h3>
-                  <div className="flex gap-2 mt-2">
-                    <button className="flex-1 bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded" onClick={exportSalesCSV}>📥 Export CSV</button>
-                    <button className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded" onClick={()=>{
-                      if (!confirm("Reset ALL sales and inventory? Export CSV first if needed.")) return;
-                      setSales([]);
-                      // optionally reset inventory to defaults
-                      setProducts(PRODUCTS.map(p => ({ ...p })));
-                      localStorage.removeItem(LOCAL_KEY);
-                    }}>Factory Reset</button>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t">
-                  <h3 className="font-semibold">Live Totals</h3>
-                  <div className="mt-2 text-sm">
-                    <div>Total Revenue (all time): <span className="font-bold">{formatAED(totals.totalAED)}</span></div>
-                    <div className="mt-1">Unique products sold counts below:</div>
-                    <div className="mt-2 space-y-1 text-xs">
-                      {products.map(p => (
-                        <div key={p.key} className="flex justify-between">
-                          <div>{p.label}</div>
-                          <div className="font-semibold">{totals.units[p.key] || 0}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </main>
-
-            {/* Recent receipts */}
-            <section className="bg-white p-4 rounded shadow">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold">Recent Receipts</h3>
-                <div className="text-sm text-gray-600">Showing last 10</div>
-              </div>
-              <div className="mt-3 space-y-3">
-                {sales.slice(0,10).map(s => (
-                  <div key={s.id} className="border rounded p-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-semibold">{s.ts}</div>
-                        <div className="text-xs text-gray-600">Receipt: {s.id} • Campaign: {s.campaign} • {s.paymentType}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-bold">{formatAED(s.amountAED)}</div>
-                        <div className="text-xs text-gray-500">{s.qty} items</div>
-                      </div>
-                    </div>
-
-                    <div className="mt-2 text-sm">
-                      {s.cart.map((it, idx) => (
-                        <div key={idx} className="flex justify-between">
-                          <div>{it.label} × {it.qty} {it.itemDiscountPct ? `(-${it.itemDiscountPct}%)` : ""}</div>
-                          <div>{formatAED((it.unitPrice * it.qty) * (1 - (it.itemDiscountPct||0)/100))}</div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="mt-2 flex gap-2">
-                      <button className="px-2 py-1 bg-blue-100 rounded text-sm" onClick={()=>{ printReceipt(s); }}>Print</button>
-                      <button className="px-2 py-1 bg-gray-100 rounded text-sm" onClick={()=>{
-                        if (!confirm("Delete this sale? This will not restore stock.")) return;
-                        setSales(prev => prev.filter(x => x.id !== s.id));
-                      }}>Delete</button>
-                    </div>
-                  </div>
-                ))}
-                {!sales.length && <div className="text-gray-500">No sales yet.</div>}
-              </div>
-            </section>
-
-            <footer className="text-center text-xs text-gray-500 mt-6">
-              Built for The Fun Crunch • Advanced POS — {TIMEZONE} timestamps
-            </footer>
-
-            {/* Hidden print area template (optional rendering if needed) */}
-            <div id="receipt-area" style={{display: "none"}} />
-          </div>
-        );
+      function addItemToCart(){
+        if(!selectedProduct) return alert("Select a product.");
+        const prod = products.find(p=>p.key===selectedProduct);
+        const q = Number(qty)||0;
+        if(q<1) return alert("Quantity must be at least 1.");
+        if(prod.stock<q) return alert(`Not enough stock for ${prod.label}. Current: ${prod.stock}`);
+        const price = Number(unitPrice)||prod.price;
+        const discountPct = Math.max(0,Math.min(100,Number(itemDiscount)||0));
+        setCart(prev=>[...prev,{productKey:prod.key,label:prod.label,qty:q,unitPrice:price,itemDiscountPct:discountPct}]);
+        setQty(1); setItemDiscount(0);
       }
 
-      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-    </script>
-  </body>
+      function removeCartItem(i){ setCart(cart.filter((_,idx)=>idx!==i)); }
+
+      function applyInventoryChange(productKey,delta){
+        setProducts(prev=>prev.map(p=>p.key===productKey?{...p,stock:Math.max(0,p.stock+delta)}:p));
+      }
+
+      function handleConfirmSale(){
+        if(!cart.length) return alert("Add items to cart first.");
+        let subtotal=0;
+        cart.forEach(it=>{
+          const line = it.unitPrice*it.qty;
+          const discounted = line*(1-(it.itemDiscountPct||0)/100);
+          subtotal+=discounted;
+        });
+        const overallDisc = Math.max(0,Math.min(100,Number(overallDiscount)||0));
+        const totalAfterOverall = subtotal*(1-overallDisc/100);
+        const amountAED = Number((Math.round(totalAfterOverall*100)/100).toFixed(2));
+
+        const newProducts = products.map(p=>{
+          const inCart = cart.find(c=>c.productKey===p.key);
+          if(!inCart) return p;
+          return {...p,stock:Math.max(0,p.stock-inCart.qty)};
+        });
+        setProducts(newProducts);
+
+        const sale = {
+          id:"r"+Date.now(),
+          ts:nowString(),
+          campaign:selectedCampaign,
+          paymentType,
+          cart,
+          qty:cart.reduce((s,i)=>s+i.qty,0),
+          overallDiscountPct:overallDisc,
+          amountAED,
+          cashier:"POS"
+        };
+        setSales(prev=>[sale,...prev]);
+        setCart([]);
+        setOverallDiscount(0);
+        if(autoPrint) printReceipt(sale);
+      }
+
+      function printReceipt(sale){
+        const receiptHtml = generateReceiptHtml(sale);
+        const w = window.open("","_blank","width=400,height=800");
+        if(!w) return alert("Popup blocked");
+        w.document.write(receiptHtml);
+        w.document.close();
+        setTimeout(()=>{w.focus(); w.print();},300);
+      }
+
+      function generateReceiptHtml(sale){
+        const lines = sale.cart.map(i=>{
+          const lineTotal=(i.unitPrice*i.qty)*(1-(i.itemDiscountPct||0)/100);
+          const discText = i.itemDiscountPct?` (-${i.itemDiscountPct}%)`:"";
+          return `<tr><td style="padding:4px">${i.label} × ${i.qty}${discText}</td><td style="padding:4px;text-align:right">${formatAED(lineTotal)}</td></tr>`;
+        }).join("");
+        return `<html><head><meta charset="utf-8"/><title>Receipt ${sale.id}</title><style>
+          body{font-family:Arial,sans-serif;padding:12px;}
+          h2{margin-bottom:6px;}
+          table{width:100%;border-collapse:collapse;margin-top:8px;}
+          td{border-bottom:1px dashed #ddd;}
+          .total{font-weight:bold;font-size:1.1em;}
+        </style></head><body>
+
+```
+    <div class="receipt-print-area">
+      <h2>The Fun Crunch</h2>
+      <div>Receipt: ${sale.id}</div>
+      <div>Time: ${sale.ts}</div>
+      <div>Campaign: ${sale.campaign}</div>
+      <div>Payment: ${sale.paymentType}</div>
+      <table>${lines}</table>
+      <div style="margin-top:8px" class="total">TOTAL: ${formatAED(sale.amountAED)}</div>
+      <div style="margin-top:10px;font-size:12px;color:#666">Thank you! — The Fun Crunch</div>
+    </div></body></html>`;
+  }
+
+  function addCampaign(name){
+    const nm=(name||"").trim();
+    if(!nm) return;
+    if(campaigns.includes(nm)) return alert("Campaign already exists.");
+    setCampaigns(c=>[nm,...c]);
+    setSelectedCampaign(nm);
+  }
+
+  function resetCampaignTotals(campaignName){
+    if(!confirm(`Reset sales for campaign "${campaignName}"? This will remove sales entries for that campaign.`)) return;
+    setSales(prev=>prev.filter(s=>s.campaign!==campaignName));
+  }
+
+  function exportSalesCSV(){
+    if(!sales.length) return alert("No sales to export.");
+    const rows = sales.map(s=>({
+      id:s.id,
+      ts:s.ts,
+      campaign:s.campaign,
+      paymentType:s.paymentType,
+      qty:s.qty,
+      amountAED:s.amountAED,
+      items:s.cart.map(i=>`${i.label}×${i.qty}${i.itemDiscountPct?`(-${i.itemDiscountPct}%)`:""}`).join(" | ")
+    }));
+    downloadCSV(rows,`funcrunch_sales_${new Date().toISOString().slice(0,10)}.csv`);
+  }
+
+  // ---------- UI ----------
+  return (
+    <div className="max-w-6xl mx-auto space-y-6">
+      <h1 className="text-3xl font-extrabold text-yellow-600 flex items-center gap-3">
+        🍟 The Fun Crunch — Advanced POS
+      </h1>
+      <p className="text-sm text-gray-600">Sales tracker — discounts, inventory, campaigns, print receipts</p>
+    </div>
+  );
+}
+
+try {
+  ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+} catch(err) {
+  document.body.innerHTML=`<pre style="color:red">${err}</pre>`;
+  console.error(err);
+}
+```
+
+  </script>
+</body>
 </html>
-
